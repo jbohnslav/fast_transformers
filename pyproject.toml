@@ -1,0 +1,96 @@
+[project]
+name = "fast-transformers"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "transformers",
+]
+
+[tool.uv.sources]
+transformers = { git = "https://github.com/huggingface/transformers" }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.7",
+]
+
+[tool.ruff]
+exclude = [
+    "transformers-fork/",
+]
+
+# Enable strict checks
+line-length = 120
+target-version = "py312"
+show-fixes = true
+
+[tool.ruff.lint]
+# Enable all rules by default, then selectively disable
+select = ["ALL"]
+
+ignore = [
+    # Docstring rules - too strict for utility scripts
+    "D100",    # Missing docstring in public module
+    "D103",    # Missing docstring in public function
+    "D104",    # Missing docstring in public package
+    "D107",    # Missing docstring in __init__
+    
+    # Print statements allowed for scripts
+    "T201",    # print found
+    "T203",    # pprint found
+    
+    # Exception handling - allow simple patterns
+    "TRY003",  # Avoid specifying long messages outside exception class
+    "EM101",   # Exception must not use a string literal
+    "EM102",   # Exception must not use an f-string literal
+    
+    # Complexity rules - too strict for small projects
+    "PLR0913", # Too many arguments in function
+    "PLR0915", # Too many statements
+    "C901",    # Function is too complex
+    
+    # Type annotation flexibility
+    "ANN101",  # Missing type annotation for self
+    "ANN102",  # Missing type annotation for cls  
+    "ANN401",  # Dynamically typed expressions (Any) disallowed
+    
+    # Boolean traps - often not worth the complexity
+    "FBT",     # flake8-boolean-trap (entire category)
+    
+    # Pathlib enforcement - allow os.path for compatibility
+    "PTH",     # flake8-use-pathlib (entire category)
+    
+    # Security - too strict for development scripts
+    "S101",    # Use of assert detected
+    
+    # Imports at top level - allow conditional imports
+    "PLC0415", # Import outside top-level
+    
+    # Magic numbers - too pedantic for small scripts
+    "PLR2004", # Magic value used in comparison
+    
+    # Formatter conflicts
+    "COM812",  # Trailing comma missing
+    "ISC001",  # Implicit string concatenation
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py files
+
+[tool.ruff.lint.isort]
+known-first-party = ["fast_transformers"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
