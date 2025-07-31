@@ -1,0 +1,11 @@
+# sky launch -c dev dev.yaml
+resources:
+  accelerators: H100:1
+
+workdir: .
+
+setup: |
+  uv sync
+
+run: |
+  nvidia-smi
