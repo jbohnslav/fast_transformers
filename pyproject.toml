@@ -1,21 +1,13 @@
 [project]
 name = "fast-transformers"
 version = "0.1.0"
-description = "Add your description here"
+description = "Clean UV-based transformers benchmarking"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "datasets>=4.0.0",
-    "pillow>=11.3.0",
-    "qwen-vl-utils>=0.0.11",
-    "skypilot>=0.10.0",
-    "torch>=2.7.1",
-    "torchvision>=0.22.1",
-    "transformers",
+    # Dependencies are managed in separate UV environments
+    # See Makefile for setup commands
 ]
-
-[tool.uv.sources]
-transformers = { git = "https://github.com/huggingface/transformers" }
 
 [dependency-groups]
 dev = [
@@ -25,6 +17,8 @@ dev = [
 [tool.ruff]
 exclude = [
     "transformers-fork/",
+    "archive/",
+    ".venv-*/",
 ]
 
 # Enable strict checks
