@@ -10,7 +10,7 @@ def load_fork(fork_root: str, alias: str = "transformers_fork"):
     Parameters
     ----------
     fork_root : str | Path
-        Path that contains the fork’s 'transformers/' package directory.
+        Path that contains the fork's 'transformers/' package directory.
     alias : str
         The key under which the fork will be exposed in sys.modules.
 
@@ -58,8 +58,10 @@ def load_fork(fork_root: str, alias: str = "transformers_fork"):
     sys.modules[alias] = fork
     return baseline, fork
 
+
 if __name__ == "__main__":
     import sys
+
     path = sys.argv[1] if len(sys.argv) > 1 else "transformers-fork"
     base, fork = load_fork(path)
 
