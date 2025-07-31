@@ -8,4 +8,9 @@ setup: |
   uv sync
 
 run: |
+  git clone https://github.com/jbohnslav/transformers.git transformers-fork
+  ls -lah
   nvidia-smi
+
+secrets:
+  GIT_TOKEN:
