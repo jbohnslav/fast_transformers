@@ -146,6 +146,9 @@ def generate_summary_report(run_dir: Path):
                 }
             )
 
+    # Sort variants by version, then by note (eager first)
+    all_variants.sort(key=lambda x: (x["version"], x["note"]))
+
     # NxN Matrix Calculation
     matrix = {v["name"]: {} for v in all_variants}
     for v_a in all_variants:
@@ -168,13 +171,13 @@ def generate_summary_report(run_dir: Path):
         f.write("|---|---|---|---|---|---|\n")
         f.writelines(
             f"| {item['name']} | {item['note']} | {item['p50_ms']:.2f} | {item['p90_ms']:.2f} | {item['p99_ms']:.2f} | {item['average_ms']:.2f} |\n"
-            for item in sorted(all_variants, key=lambda x: x["name"])
+            for item in all_variants
         )
 
         f.write("\n## Choice Probabilities (A, B, C, D, E)\n\n")
         f.write("| Variant | A | B | C | D | E |\n")
         f.write("|---|---|---|---|---|---|\n")
-        for item in sorted(all_variants, key=lambda x: x["name"]):
+        for item in all_variants:
             choices = item.get("choices", {})
             row = [
                 f"**{item['name']}**",
