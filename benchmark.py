@@ -89,7 +89,15 @@ def perform_benchmark(version: str, output_dir: str):
             json.dump(timing_data, f, indent=2)
 
         # Save profiler trace
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof, torch.no_grad():
+        with (
+            profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                record_shapes=True,
+                with_stack=True,
+                profile_memory=True,
+            ) as prof,
+            torch.no_grad(),
+        ):
             model(**inputs)
         prof.export_chrome_trace(str(output_dir / f"trace_{timestamp}_{version}_{note}.json"))
 
