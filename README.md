@@ -1,114 +1,93 @@
-# Clean UV-based Transformers Benchmarking
+# Transformers Benchmarking Framework
 
-This project uses **UV environments** to cleanly separate baseline and fork versions of transformers, eliminating all the complex `sys.path` manipulation and import gymnastics.
+A Python-based framework for performance and numerical accuracy benchmarking of different `transformers` library versions. It uses `uv` for isolated environment management and compares both eager and `torch.compile()`d model performance.
 
-## 🧘‍♂️ The Zen Approach
+## Quickstart
 
-- **One environment = One transformers version**
-- **No import tricks, no sys.path hacks**  
-- **Clean, repeatable, maintainable**
+### 1. Configure
 
-## Quick Start
+Edit the `CONFIG` dictionary in `main.py` to define the `transformers` versions to test.
 
-### 1. Setup (run once)
-
-```bash
-# Create and install both environments
-make setup
-
-# Or manually:
-make setup-baseline  # GitHub main transformers
-make setup-fork      # Local transformers-fork/
+```python
+# main.py
+CONFIG = {
+    "versions": [
+        {"name": "4.54.0", "source": "transformers==4.54.0"},
+        {"name": "transformers-main", "source": "git+https://github.com/huggingface/transformers.git"},
+        {"name": "transformers-fork", "source": "-e transformers-fork/"},
+    ],
+    # ...
+}
 ```
 
-### 2. Run Comparison
+### 2. Run
+
+Execute the benchmark from your terminal. The `uv run` command ensures all dependencies, including `torch` for the final report generation, are available.
 
 ```bash
-# Easy way - run both phases:
-make compare
+# Run the full benchmark workflow
+uv run main.py
 
-# Or step by step:
-make baseline  # Save baseline tensor
-make fork      # Compare fork vs baseline
-
-# Or use the script:
-./run_comparison.sh
+# To ensure a clean state, deleting all previous results and environments:
+uv run main.py --clean
 ```
 
-### 3. Benchmark Performance
+### 3. Analyze
 
-```bash
-# Benchmark baseline (GitHub main)
-make benchmark-baseline
-
-# Benchmark fork
-make benchmark-fork
-```
-
-## File Structure
-
-### New Clean Files
-- `forward_qwen.py` - Main comparison script (replaces `compare_qwen2_vl.py`)
-- `benchmark_clean.py` - Clean benchmark script (replaces `benchmark.py`)
-- `Makefile` - All commands in one place
-- `run_comparison.sh` - Simple bash script for comparisons
-
-### Environments
-- `.venv-baseline/` - GitHub transformers main
-- `.venv-fork/` - Your local `transformers-fork/`
-
-### Archived
-- `archive/` - Old scripts with complex import tricks
-
-## How It Works
-
-### Phase 1: Baseline
-```bash
-.venv-baseline/bin/python forward_qwen.py --dump baseline.pt
-```
-Runs GitHub main transformers, saves the last-token logits to `baseline.pt`.
-
-### Phase 2: Fork Comparison  
-```bash
-.venv-fork/bin/python forward_qwen.py --ref baseline.pt
-```
-Runs your fork, loads the baseline tensor, computes L2 distance.
-
-## Key Benefits
-
-✅ **No more wrestling with two libraries in one process**  
-✅ **Each environment has exactly one transformers version**  
-✅ **No sys.path manipulation or import tricks**  
-✅ **Easily repeatable - just rerun make compare**  
-✅ **Clean separation enables proper benchmarking**  
-✅ **UV handles all the environment complexity**
-
-## Dependencies
-
-All dependencies are managed by UV in separate environments according to your `pyproject.toml`:
-
-- `torch>=2.7.1`
-- `datasets>=4.0.0` 
-- `pillow>=11.3.0`
-- `qwen-vl-utils>=0.0.11`
-- Transformers: GitHub main vs your fork
-
-## UV Commands Reference
-
-```bash
-# Setup environments
-uv venv .venv-baseline
-uv pip install --python .venv-baseline/bin/python [packages...]
-
-# Run in specific environment (direct python to avoid UV project mode)
-.venv-baseline/bin/python script.py
-
-# Check what's installed
-uv pip list --python .venv-baseline/bin/python
-```
-
-**Note:** We use direct python execution instead of `uv run --python` because UV's project mode (triggered by `pyproject.toml`) automatically creates/uses `.venv` even when specifying a different environment.
+Review the generated `summary.md` in the `results/run_<timestamp>/` directory.
 
 ---
 
-**No more import gymnastics! 🎉**
+## Example `summary.md` Output
+
+Each run generates a self-contained summary report with performance metrics and a complete N×N matrix of logit differences between every variant.
+
+````markdown
+# Benchmark Summary
+
+- **Run directory**: `/path/to/results/run_20250801_150000`
+
+## Performance Results
+
+| Variant | Note | p50 (ms) | p90 (ms) | p99 (ms) | Average (ms) |
+|---|---|---|---|---|---|
+| 4.54.0_compiled_sdpa | compiled_sdpa | 45.87 | 48.91 | 49.02 | 46.35 |
+| 4.54.0_eager_sdpa | eager_sdpa | 68.11 | 72.50 | 72.89 | 68.55 |
+| transformers-fork_compiled_sdpa | compiled_sdpa | 45.92 | 48.88 | 48.99 | 46.41 |
+| transformers-fork_eager_sdpa | eager_sdpa | 69.50 | 70.11 | 70.34 | 68.99 |
+| transformers-main_compiled_sdpa | compiled_sdpa | 58.03 | 61.21 | 61.55 | 57.49 |
+| transformers-main_eager_sdpa | eager_sdpa | 89.11 | 94.23 | 94.50 | 89.72 |
+
+## Logit L2 Differences (N×N)
+
+| | 4.54.0_eager_sdpa | 4.54.0_compiled_sdpa | transformers-fork_eager_sdpa | ... |
+|---|---|---|---|---|
+| **4.54.0_eager_sdpa** | 0.000000 | 0.000101 | 14.937500 | ... |
+| **4.54.0_compiled_sdpa** | 0.000101 | 0.000000 | 14.937598 | ... |
+| **transformers-fork_eager_sdpa** | 14.937500 | 14.937598 | 0.000000 | ... |
+| ... | ... | ... | ... | ... |
+````
+
+---
+
+## Workflow Details
+
+-   **`main.py`**: The orchestrator script. It reads the configuration, manages `uv` environments, and calls the benchmark worker for each version. After all runs are complete, it aggregates the results from all artifacts and generates the final `summary.md` report.
+
+-   **`benchmark.py`**: The worker script. For a single `transformers` version, it performs the following:
+    1.  Runs a forward pass and performance benchmark for the model in **eager mode**.
+    2.  Saves the eager mode logits (`logits_eager_sdpa.pt`) and performance metrics.
+    3.  Compiles the model using `torch.compile()`.
+    4.  Runs a forward pass and performance benchmark for the model in **compiled mode**.
+    5.  Saves the compiled mode logits (`logits_compiled_sdpa.pt`) and performance metrics.
+
+## Output Artifacts
+
+For each version tested, the framework generates a subdirectory containing:
+
+-   `timing_..._eager_sdpa.json`: Performance data for the standard model.
+-   `trace_..._eager_sdpa.json`: PyTorch profiler trace for the standard model.
+-   `logits_eager_sdpa.pt`: Raw output logits from the standard model.
+-   `timing_..._compiled_sdpa.json`: Performance data for the compiled model.
+-   `trace_..._compiled_sdpa.json`: PyTorch profiler trace for the compiled model.
+-   `logits_compiled_sdpa.pt`: Raw output logits from the compiled model.
