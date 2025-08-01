@@ -1,7 +1,7 @@
 import argparse
 import gc
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 
@@ -31,9 +31,9 @@ def prepare_inputs(processor, sample):
 
 
 def perform_benchmark(version: str, output_dir: str):
-    """Runs benchmarks for both eager and compiled modes, saving all artifacts."""
+    """Run benchmarks for both eager and compiled modes, saving all artifacts."""
     output_dir = Path(output_dir)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     processor = transformers.AutoProcessor.from_pretrained(MODEL_ID, use_fast=False)
     ds = load_dataset("HuggingFaceM4/the_cauldron", "ai2d", split="train[:1]")
     inputs = prepare_inputs(processor, ds[0])
@@ -103,7 +103,7 @@ def perform_benchmark(version: str, output_dir: str):
     try:
         model_compiled = torch.compile(model)
         _benchmark_internal(model_compiled, "compiled_sdpa")
-    except Exception as e:
+    except (RuntimeError, torch.jit.JITException) as e:
         print(f"Could not compile model, skipping compiled benchmark. Error: {e}")
 
     del model

@@ -1,4 +1,5 @@
 # /// script
+# requires-python = ">=3.11"
 # dependencies = [
 #   "torch",
 #   "numpy",
@@ -12,10 +13,13 @@ import shlex
 import shutil
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
+
+# Set up custom logger
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 CONFIG = {
@@ -52,10 +56,11 @@ CONFIG = {
 
 # --- Internal Functions ---
 def _run_command(command: list[str], log_file: Path) -> None:
-    logging.info(f"Running command: {' '.join(command)}")
+    logger.info("Running command: %s", " ".join(command))
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"\n--- Running: {' '.join(command)} ---\n")
-        process = subprocess.Popen(
+        # subprocess call is safe - we control command construction
+        process = subprocess.Popen(  # noqa: S603
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
         )
         for line in iter(process.stdout.readline, ""):
@@ -71,11 +76,13 @@ def _setup_logging(run_dir: Path | None = None) -> None:
     if run_dir:
         handlers.append(logging.FileHandler(run_dir / "run.log"))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s", handlers=handlers)
+    # Configure our custom logger
+    logger.setLevel(logging.INFO)
 
 
 # --- Core Logic ---
 def setup_environments(log_file: Path):
-    logging.info("Setting up virtual environments...")
+    logger.info("Setting up virtual environments...")
     venvs_dir = CONFIG["venvs_dir"]
     venvs_dir.mkdir(exist_ok=True)
     for cfg in CONFIG["versions"]:
@@ -93,14 +100,14 @@ def setup_environments(log_file: Path):
             *CONFIG["common_dependencies"],
         ]
         _run_command(install_command, log_file)
-    logging.info("All environments are ready.")
+    logger.info("All environments are ready.")
 
 
 def run_experiment(run_dir: Path, log_file: Path):
-    logging.info(f"Starting experiment in: {run_dir}")
+    logger.info("Starting experiment in: %s", run_dir)
     for cfg in CONFIG["versions"]:
         name = cfg["name"]
-        logging.info(f"--- Processing version: {name} ---")
+        logger.info("--- Processing version: %s ---", name)
         python_executable = CONFIG["venvs_dir"] / f"venv-{name}" / "bin" / "python"
         version_output_dir = run_dir / name
         version_output_dir.mkdir(exist_ok=True)
@@ -111,7 +118,7 @@ def run_experiment(run_dir: Path, log_file: Path):
 
 
 def generate_summary_report(run_dir: Path):
-    logging.info("Generating summary report...")
+    logger.info("Generating summary report...")
     all_variants = []
     for cfg in CONFIG["versions"]:
         version_dir = run_dir / cfg["name"]
@@ -120,17 +127,26 @@ def generate_summary_report(run_dir: Path):
                 data = json.load(f)
             stats = data.get("statistics", {})
             variant_name = f"{data['version']}_{data['model_note']}"
+
+            # Load choice probabilities
+            choices = {}
+            choices_path = version_dir / f"choices_{data['model_note']}.json"
+            if choices_path.exists():
+                with open(choices_path) as f:
+                    choices = json.load(f)
+
             all_variants.append(
                 {
                     "name": variant_name,
                     "version": data["version"],
                     "note": data.get("model_note", "N/A"),
                     "logits_path": version_dir / f"logits_{data['model_note']}.pt",
+                    "choices": choices,
                     **stats,
                 }
             )
 
-    # N×N Matrix Calculation
+    # NxN Matrix Calculation
     matrix = {v["name"]: {} for v in all_variants}
     for v_a in all_variants:
         if not v_a["logits_path"].exists():
@@ -155,7 +171,22 @@ def generate_summary_report(run_dir: Path):
             for item in sorted(all_variants, key=lambda x: x["name"])
         )
 
-        f.write("\n## Logit L2 Differences (N×N)\n\n")
+        f.write("\n## Choice Probabilities (A, B, C, D, E)\n\n")
+        f.write("| Variant | A | B | C | D | E |\n")
+        f.write("|---|---|---|---|---|---|\n")
+        for item in sorted(all_variants, key=lambda x: x["name"]):
+            choices = item.get("choices", {})
+            row = [
+                f"**{item['name']}**",
+                f"{choices.get('A', 0):.4f}",
+                f"{choices.get('B', 0):.4f}",
+                f"{choices.get('C', 0):.4f}",
+                f"{choices.get('D', 0):.4f}",
+                f"{choices.get('E', 0):.4f}",
+            ]
+            f.write("| " + " | ".join(row) + " |\n")
+
+        f.write("\n## Logit L2 Differences (NxN)\n\n")
         header = [""] + [v["name"] for v in all_variants]
         f.write("|" + " | ".join(header) + "|\n")
         f.write("|" + "---|" * len(header) + "\n")
@@ -163,11 +194,11 @@ def generate_summary_report(run_dir: Path):
             row = [f"**{v_a['name']}**"] + [matrix[v_a["name"]].get(v_b["name"], "N/A") for v_b in all_variants]
             f.write("| " + " | ".join(row) + " |\n")
 
-    logging.info(f"Summary report saved to: {report_path}")
+    logger.info("Summary report saved to: %s", report_path)
 
 
 def clean():
-    logging.info("Cleaning up generated files...")
+    logger.info("Cleaning up generated files...")
     for dir_path in [CONFIG["results_dir"], CONFIG["venvs_dir"]]:
         if dir_path.exists():
             shutil.rmtree(dir_path)
@@ -181,7 +212,7 @@ def main():
     if args.clean:
         clean()
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_dir = CONFIG["results_dir"] / f"run_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)
@@ -191,9 +222,9 @@ def main():
         setup_environments(log_file)
         run_experiment(run_dir, log_file)
         generate_summary_report(run_dir)
-        logging.info(f"Benchmark run completed successfully. Results are in: {run_dir.resolve()}")
-    except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
-        logging.exception(f"An error occurred: {e}", exc_info=False)
+        logger.info("Benchmark run completed successfully. Results are in: %s", run_dir.resolve())
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+        logger.exception("An error occurred")
         sys.exit(1)
 
 

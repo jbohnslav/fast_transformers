@@ -89,6 +89,7 @@ ignore = [
     # Other
     "ERA001",
     "PGH004",
+    "UP017",
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided
