@@ -70,6 +70,34 @@ Each run generates a self-contained summary report with performance metrics and 
 
 ---
 
+## Debugging
+
+To run a single forward pass and drop into the Python debugger to inspect a model, use the `debug_qwen2vl.py` script. This is useful for interactive debugging without running the full benchmark suite.
+
+Execute the following command, making sure to use the correct virtual environment for the model you wish to debug (e.g., `venv-transformers-fork` for your local fork).
+
+```bash
+# Run the debug script for the forked transformers version
+.venvs/venv-transformers-fork/bin/python debug_qwen2vl.py
+```
+
+To use the VSCode / Cursor debugger, add this to your `launch.json` file. You may need to adjust the `program` and `python` paths to match your local setup.
+
+```json
+{
+    "name": "Debug: Qwen2VL Fork",
+    "type": "python",
+    "request": "launch",
+    "program": "/root/sky_workdir/debug_qwen2vl.py",
+    "console": "integratedTerminal",
+    "justMyCode": true,
+    "python": "/root/sky_workdir/.venvs/venv-transformers-fork/bin/python"
+},
+```
+
+---
+
+
 ## Workflow Details
 
 -   **`main.py`**: The orchestrator script. It reads the configuration, manages `uv` environments, and calls the benchmark worker for each version. After all runs are complete, it aggregates the results from all artifacts and generates the final `summary.md` report.
