@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 CONFIG = {
     "versions": [
-        {
-            "name": "4.53.3",
-            "source": "transformers==4.53.3",
-        },
-        {
-            "name": "4.54.0",
-            "source": "transformers==4.54.0",
-        },
+        # {
+        #     "name": "4.53.3",
+        #     "source": "transformers==4.53.3",
+        # },
+        # {
+        #     "name": "4.54.0",
+        #     "source": "transformers==4.54.0",
+        # },
         {
             "name": "transformers-main",
             "source": "git+https://github.com/huggingface/transformers.git",
@@ -146,8 +146,23 @@ def generate_summary_report(run_dir: Path):
                 }
             )
 
-    # Sort variants by version, then by note (eager first)
-    all_variants.sort(key=lambda x: (x["version"], x["note"]))
+    # Get the desired version order from the config
+    version_order = [cfg["name"] for cfg in CONFIG["versions"]]
+    version_map = {name: i for i, name in enumerate(version_order)}
+
+    # Define the priority of notes for sorting
+    note_priority = {
+        "eager_sdpa": 0,
+        "compiled_sdpa": 1,
+    }
+
+    # Sort variants based on version config and note priority
+    all_variants.sort(
+        key=lambda x: (
+            version_map.get(x["version"], float("inf")),
+            note_priority.get(x["note"], float("inf")),
+        )
+    )
 
     # NxN Matrix Calculation
     matrix = {v["name"]: {} for v in all_variants}
