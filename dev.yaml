@@ -1,0 +1,16 @@
+# sky launch -c dev dev.yaml
+resources:
+  accelerators: H100:1
+
+workdir: .
+
+setup: |
+  uv sync
+
+run: |
+  git clone https://github.com/jbohnslav/transformers.git transformers-fork
+  ls -lah
+  nvidia-smi
+
+secrets:
+  GIT_TOKEN:
