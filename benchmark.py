@@ -54,11 +54,16 @@ def perform_benchmark(version: str, output_dir: str):
         with open(output_dir / f"choices_{note}.json", "w") as f:
             json.dump(choice_probs, f, indent=2)
 
-        # Performance measurement
+        # Performance and memory measurement
         with torch.no_grad():
             for _ in range(WARMUP_ITERS):
                 model(**inputs)
             torch.cuda.synchronize()
+            
+            # Reset memory stats after warmup
+            torch.cuda.reset_peak_memory_stats()
+            baseline_memory = torch.cuda.memory_allocated()
+            
             latencies_ms = []
             for _ in range(MEASURE_ITERS):
                 start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
@@ -67,6 +72,10 @@ def perform_benchmark(version: str, output_dir: str):
                 end.record()
                 torch.cuda.synchronize()
                 latencies_ms.append(start.elapsed_time(end))
+            
+            # Get peak memory usage
+            peak_memory = torch.cuda.max_memory_allocated()
+            peak_memory_gb = (peak_memory - baseline_memory) / 1024**3
 
         latencies_ms.sort()
         stats = {
@@ -74,6 +83,8 @@ def perform_benchmark(version: str, output_dir: str):
             "p50_ms": latencies_ms[int(0.5 * len(latencies_ms))],
             "p90_ms": latencies_ms[int(0.9 * len(latencies_ms))],
             "p99_ms": latencies_ms[-1],
+            "peak_memory_gb": peak_memory_gb,
+            "peak_memory_total_gb": peak_memory / 1024**3,
         }
         print("Latency stats:", stats)
 

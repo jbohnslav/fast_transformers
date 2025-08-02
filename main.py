@@ -182,10 +182,10 @@ def generate_summary_report(run_dir: Path):
     with open(report_path, "w") as f:
         f.write(f"# Benchmark Summary\n\n- **Run directory**: `{run_dir.resolve()}`\n\n")
         f.write("## Performance Results\n\n")
-        f.write("| Variant | Note | p50 (ms) | p90 (ms) | p99 (ms) | Average (ms) |\n")
-        f.write("|---|---|---|---|---|---|\n")
+        f.write("| Variant | Note | p50 (ms) | p90 (ms) | p99 (ms) | Average (ms) | Peak Memory (GB) | Total Memory (GB) |\n")
+        f.write("|---|---|---|---|---|---|---|---|\n")
         f.writelines(
-            f"| {item['name']} | {item['note']} | {item['p50_ms']:.2f} | {item['p90_ms']:.2f} | {item['p99_ms']:.2f} | {item['average_ms']:.2f} |\n"
+            f"| {item['name']} | {item['note']} | {item['p50_ms']:.2f} | {item['p90_ms']:.2f} | {item['p99_ms']:.2f} | {item['average_ms']:.2f} | {item.get('peak_memory_gb', 0):.3f} | {item.get('peak_memory_total_gb', 0):.3f} |\n"
             for item in all_variants
         )
 
