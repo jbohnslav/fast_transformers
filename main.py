@@ -235,7 +235,7 @@ def main():
     run_dir_name = f"run_{timestamp}"
     if args.note:
         safe_note = args.note.replace(" ", "_").replace("/", "_").replace("\\", "_")
-        run_dir_name += f"_{args.note}"
+        run_dir_name += f"_{safe_note}"
     run_dir = CONFIG["results_dir"] / run_dir_name
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)
