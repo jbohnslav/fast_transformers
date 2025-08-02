@@ -1,10 +1,12 @@
 import argparse
 import gc
 import json
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 
+import numpy as np
 import torch
 import transformers
 from datasets import load_dataset
@@ -12,10 +14,23 @@ from qwen_vl_utils import process_vision_info
 from torch.profiler import ProfilerActivity, profile
 from transformers.utils.logging import disable_progress_bar
 
+# For reproducibility
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+
 MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"
 DEVICE = "cuda:0"
 WARMUP_ITERS = 5
 MEASURE_ITERS = 10
+
+
 
 
 def prepare_inputs(processor, sample):
@@ -43,7 +58,7 @@ def perform_benchmark(version: str, output_dir: str):
         model.eval()
 
         # Run forward pass once to get logits
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             logits = model(**inputs).logits[0, -1]
 
         # Save logits and choice probabilities
@@ -55,7 +70,7 @@ def perform_benchmark(version: str, output_dir: str):
             json.dump(choice_probs, f, indent=2)
 
         # Performance and memory measurement
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             for _ in range(WARMUP_ITERS):
                 model(**inputs)
             torch.cuda.synchronize()
@@ -108,6 +123,7 @@ def perform_benchmark(version: str, output_dir: str):
                 profile_memory=True,
             ) as prof,
             torch.no_grad(),
+            torch.autocast(device_type="cuda", dtype=torch.bfloat16),
         ):
             model(**inputs)
         prof.export_chrome_trace(str(output_dir / f"trace_{timestamp}_{version}_{note}.json"))
