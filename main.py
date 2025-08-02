@@ -225,13 +225,18 @@ def clean():
 def main():
     parser = argparse.ArgumentParser(description="Unified Python script for transformer benchmarking.")
     parser.add_argument("--clean", action="store_true", help="Clean up all generated artifacts before running.")
+    parser.add_argument("--note", required=False, type=str, help="Note to append to the run directory name")
     args = parser.parse_args()
 
     if args.clean:
         clean()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_dir = CONFIG["results_dir"] / f"run_{timestamp}"
+    run_dir_name = f"run_{timestamp}"
+    if args.note:
+        safe_note = args.note.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        run_dir_name += f"_{args.note}"
+    run_dir = CONFIG["results_dir"] / run_dir_name
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)
     log_file = run_dir / "run.log"
