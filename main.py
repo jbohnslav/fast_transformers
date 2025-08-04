@@ -9,6 +9,7 @@
 import argparse
 import json
 import logging
+import os
 import shlex
 import shutil
 import subprocess
@@ -24,25 +25,13 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 CONFIG = {
     "versions": [
-        # {
-        #     "name": "4.53.3",
-        #     "source": "transformers==4.53.3",
-        # },
-        # {
-        #     "name": "4.54.0",
-        #     "source": "transformers==4.54.0",
-        # },
-        {
-            "name": "transformers-main",
-            "source": "git+https://github.com/huggingface/transformers.git",
-        },
-        {
-            "name": "transformers-fork",
-            "source": "-e transformers-fork/",
-        },
+        {"name": "4.53.3", "source": "transformers==4.53.3"},
+        {"name": "4.54.0", "source": "transformers==4.54.0"},
+        {"name": "transformers-main", "source": "git+https://github.com/huggingface/transformers.git"},
+        {"name": "transformers-fork", "source": "-e transformers-fork/"},
     ],
     "common_dependencies": [
-        "torch>=2.7.1",
+        "torch==2.7.1",
         "torchvision>=0.22.1",
         "datasets>=4.0.0",
         "pillow>=11.3.0",
@@ -59,8 +48,7 @@ def _run_command(command: list[str], log_file: Path) -> None:
     logger.info("Running command: %s", " ".join(command))
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"\n--- Running: {' '.join(command)} ---\n")
-        # subprocess call is safe - we control command construction
-        process = subprocess.Popen(  # noqa: S603
+        process = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
         )
         for line in iter(process.stdout.readline, ""):
@@ -71,13 +59,51 @@ def _run_command(command: list[str], log_file: Path) -> None:
             raise subprocess.CalledProcessError(process.returncode, command)
 
 
+def _get_gpu_metrics() -> dict[str, float | int | str]:
+    """Return current GPU clocks, temperature, p-state, and power draw using nvidia-smi."""
+    try:
+        output = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=clocks.sm,clocks.mem,temperature.gpu,pstate,power.draw",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+        ).strip()
+        sm_clk, mem_clk, temp, pstate, power = [v.strip() for v in output.split(",")]
+        return {
+            "sm_clock_mhz": int(sm_clk),
+            "mem_clock_mhz": int(mem_clk),
+            "temperature_c": int(temp),
+            "pstate": pstate,
+            "power_w": float(power),
+        }
+    except Exception as exc:
+        logger.warning("Could not query GPU metrics: %s", exc)
+        return {}
+
+
 def _setup_logging(run_dir: Path | None = None) -> None:
     handlers = [logging.StreamHandler(sys.stdout)]
     if run_dir:
         handlers.append(logging.FileHandler(run_dir / "run.log"))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s", handlers=handlers)
-    # Configure our custom logger
     logger.setLevel(logging.INFO)
+
+
+def _reset_gpu(log_file: Path):
+    """Attempt to reset the GPU using nvidia-smi, logging the outcome."""
+    if os.geteuid() != 0:
+        logger.warning("GPU reset requires root privileges. Skipping.")
+        return
+
+    command = ["nvidia-smi", "--gpu-reset", "-i", "0"]
+    logger.info("Attempting to reset GPU with command: %s", " ".join(command))
+    try:
+        _run_command(command, log_file)
+        logger.info("GPU reset successful.")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning("GPU reset command failed: %s. Continuing without reset.", e)
 
 
 # --- Core Logic ---
@@ -108,13 +134,39 @@ def run_experiment(run_dir: Path, log_file: Path):
     for cfg in CONFIG["versions"]:
         name = cfg["name"]
         logger.info("--- Processing version: %s ---", name)
-        python_executable = CONFIG["venvs_dir"] / f"venv-{name}" / "bin" / "python"
-        version_output_dir = run_dir / name
-        version_output_dir.mkdir(exist_ok=True)
-        _run_command(
-            [str(python_executable), "benchmark.py", f"--version={name}", f"--output-dir={version_output_dir}"],
-            log_file,
-        )
+
+        # We now loop over modes, calling the benchmark script for each.
+        for mode in ["eager_sdpa", "compiled_sdpa"]:
+            logger.info("--- Running mode: %s ---", mode)
+
+            # Ensure each variant starts with a clean Triton/Inductor cache
+            cache_dir = Path.home() / ".triton" / "cache"
+            if cache_dir.exists():
+                logger.info("Clearing Triton cache at %s", cache_dir)
+                shutil.rmtree(cache_dir)
+
+            python_executable = CONFIG["venvs_dir"] / f"venv-{name}" / "bin" / "python"
+            version_output_dir = run_dir / name
+            version_output_dir.mkdir(exist_ok=True)
+
+            command = [
+                str(python_executable),
+                "benchmark.py",
+                f"--version={name}",
+                f"--output-dir={version_output_dir}",
+                f"--mode={mode}",
+            ]
+            _run_command(command, log_file)
+
+        # Record GPU stats immediately after the benchmark finishes
+        gpu_stats = _get_gpu_metrics()
+        if gpu_stats:
+            stats_path = version_output_dir / f"gpu_stats_{name}.json"
+            with open(stats_path, "w", encoding="utf-8") as f:
+                json.dump(gpu_stats, f, indent=2)
+            logger.info("GPU stats for %s written to: %s", name, stats_path)
+
+        _reset_gpu(log_file)
 
 
 def generate_summary_report(run_dir: Path):
@@ -182,7 +234,9 @@ def generate_summary_report(run_dir: Path):
     with open(report_path, "w") as f:
         f.write(f"# Benchmark Summary\n\n- **Run directory**: `{run_dir.resolve()}`\n\n")
         f.write("## Performance Results\n\n")
-        f.write("| Variant | Note | p50 (ms) | p90 (ms) | p99 (ms) | Average (ms) | Peak Memory (GB) | Total Memory (GB) |\n")
+        f.write(
+            "| Variant | Note | p50 (ms) | p90 (ms) | p99 (ms) | Average (ms) | Peak Memory (GB) | Total Memory (GB) |\n"
+        )
         f.write("|---|---|---|---|---|---|---|---|\n")
         f.writelines(
             f"| {item['name']} | {item['note']} | {item['p50_ms']:.2f} | {item['p90_ms']:.2f} | {item['p99_ms']:.2f} | {item['average_ms']:.2f} | {item.get('peak_memory_gb', 0):.3f} | {item.get('peak_memory_total_gb', 0):.3f} |\n"
@@ -225,13 +279,18 @@ def clean():
 def main():
     parser = argparse.ArgumentParser(description="Unified Python script for transformer benchmarking.")
     parser.add_argument("--clean", action="store_true", help="Clean up all generated artifacts before running.")
+    parser.add_argument("--note", required=False, type=str, help="Note to append to the run directory name")
     args = parser.parse_args()
 
     if args.clean:
         clean()
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    run_dir = CONFIG["results_dir"] / f"run_{timestamp}"
+    run_dir_name = f"run_{timestamp}"
+    if args.note:
+        safe_note = args.note.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        run_dir_name += f"_{safe_note}"
+    run_dir = CONFIG["results_dir"] / run_dir_name
     run_dir.mkdir(parents=True, exist_ok=True)
     _setup_logging(run_dir)
     log_file = run_dir / "run.log"
