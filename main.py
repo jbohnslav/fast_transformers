@@ -9,6 +9,7 @@
 import argparse
 import json
 import logging
+import os
 import shlex
 import shutil
 import subprocess
@@ -42,7 +43,7 @@ CONFIG = {
         },
     ],
     "common_dependencies": [
-        "torch>=2.7.1",
+        "torch==2.7.1",
         "torchvision>=0.22.1",
         "datasets>=4.0.0",
         "pillow>=11.3.0",
@@ -94,6 +95,7 @@ def setup_environments(log_file: Path):
             "uv",
             "pip",
             "install",
+            "--no-cache",
             "--python",
             str(python_executable),
             *shlex.split(cfg["source"]),
@@ -108,6 +110,9 @@ def run_experiment(run_dir: Path, log_file: Path):
     for cfg in CONFIG["versions"]:
         name = cfg["name"]
         logger.info("--- Processing version: %s ---", name)
+        if os.path.exists("~/.triton/cache"):
+            logger.info("Clearing Triton cache...")
+            shutil.rmtree("~/.triton/cache")
         python_executable = CONFIG["venvs_dir"] / f"venv-{name}" / "bin" / "python"
         version_output_dir = run_dir / name
         version_output_dir.mkdir(exist_ok=True)
