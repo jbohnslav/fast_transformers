@@ -80,6 +80,28 @@ def _setup_logging(run_dir: Path | None = None) -> None:
     logger.setLevel(logging.INFO)
 
 
+def _reset_gpu(log_file: Path):
+    """Attempt to reset the GPU using nvidia-smi, logging the outcome."""
+    command = ["nvidia-smi", "--gpu-reset"]
+    logger.info("Attempting to reset GPU with command: %s", " ".join(command))
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"\n--- Running: {' '.join(command)} ---\n")
+            process = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
+            )
+            for line in iter(process.stdout.readline, ""):
+                sys.stdout.write(line)
+                f.write(line)
+            process.wait()
+            if process.returncode != 0:
+                logger.warning("GPU reset command failed with return code %d. See logs.", process.returncode)
+            else:
+                logger.info("GPU reset successful.")
+    except FileNotFoundError:
+        logger.warning("`nvidia-smi` not found. Skipping GPU reset.")
+
+
 # --- Core Logic ---
 def setup_environments(log_file: Path):
     logger.info("Setting up virtual environments...")
@@ -94,7 +116,7 @@ def setup_environments(log_file: Path):
             "uv",
             "pip",
             "install",
-            "--no-cache",
+            # "--no-cache",
             "--python",
             str(python_executable),
             *shlex.split(cfg["source"]),
@@ -119,6 +141,8 @@ def run_experiment(run_dir: Path, log_file: Path):
             [str(python_executable), "benchmark.py", f"--version={name}", f"--output-dir={version_output_dir}"],
             log_file,
         )
+        # Reset GPU to ensure a clean state for the next run
+        _reset_gpu(log_file)
 
 
 def generate_summary_report(run_dir: Path):
