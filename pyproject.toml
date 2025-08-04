@@ -12,6 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.12.7",
+    "skypilot>=0.10.0",
 ]
 
 [tool.ruff]
