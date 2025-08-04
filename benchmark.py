@@ -27,7 +27,7 @@ torch.backends.cudnn.benchmark = False
 
 MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"
 DEVICE = "cuda:0"
-WARMUP_ITERS = 5
+WARMUP_ITERS = 50
 MEASURE_ITERS = 10
 
 
