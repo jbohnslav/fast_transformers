@@ -31,8 +31,6 @@ WARMUP_ITERS = 50
 MEASURE_ITERS = 10
 
 
-
-
 def prepare_inputs(processor, sample):
     """Convert a TheCauldron sample into model-friendly tensors on DEVICE."""
     image = sample["images"][0]
@@ -45,8 +43,8 @@ def prepare_inputs(processor, sample):
     )
 
 
-def perform_benchmark(version: str, output_dir: str):
-    """Run benchmarks for both eager and compiled modes, saving all artifacts."""
+def perform_benchmark(version: str, output_dir: str, mode: str):
+    """Run a single benchmark mode (eager or compiled), saving all artifacts."""
     output_dir = Path(output_dir)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     processor = transformers.AutoProcessor.from_pretrained(MODEL_ID, use_fast=False)
@@ -74,11 +72,11 @@ def perform_benchmark(version: str, output_dir: str):
             for _ in range(WARMUP_ITERS):
                 model(**inputs)
             torch.cuda.synchronize()
-            
+
             # Reset memory stats after warmup
             torch.cuda.reset_peak_memory_stats()
             baseline_memory = torch.cuda.memory_allocated()
-            
+
             latencies_ms = []
             for _ in range(MEASURE_ITERS):
                 start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
@@ -87,7 +85,7 @@ def perform_benchmark(version: str, output_dir: str):
                 end.record()
                 torch.cuda.synchronize()
                 latencies_ms.append(start.elapsed_time(end))
-            
+
             # Get peak memory usage
             peak_memory = torch.cuda.max_memory_allocated()
             peak_memory_gb = (peak_memory - baseline_memory) / 1024**3
@@ -109,6 +107,7 @@ def perform_benchmark(version: str, output_dir: str):
             "version": version,
             "model_note": note,
             "transformers_version": transformers.__version__,
+            "torch_version": torch.__version__,
             "statistics": stats,
         }
         with open(output_dir / f"timing_{timestamp}_{version}_{note}.json", "w") as f:
@@ -128,20 +127,29 @@ def perform_benchmark(version: str, output_dir: str):
             model(**inputs)
         prof.export_chrome_trace(str(output_dir / f"trace_{timestamp}_{version}_{note}.json"))
 
-    model = transformers.Qwen2VLForConditionalGeneration.from_pretrained(
-        MODEL_ID, torch_dtype=torch.bfloat16, attn_implementation="sdpa"
-    ).to(DEVICE)
+    # --- Conditional benchmark execution ---
+    if mode == "eager_sdpa":
+        model = transformers.Qwen2VLForConditionalGeneration.from_pretrained(
+            MODEL_ID, torch_dtype=torch.bfloat16, attn_implementation="sdpa"
+        ).to(DEVICE)
+        _benchmark_internal(model, "eager_sdpa")
+        del model
 
-    _benchmark_internal(model, "eager_sdpa")
+    elif mode == "compiled_sdpa":
+        print("\nCompiling model with torch.compile()...")
+        try:
+            model_to_compile = transformers.Qwen2VLForConditionalGeneration.from_pretrained(
+                MODEL_ID, torch_dtype=torch.bfloat16, attn_implementation="sdpa"
+            ).to(DEVICE)
+            model_compiled = torch.compile(model_to_compile)
+            _benchmark_internal(model_compiled, "compiled_sdpa")
+            del model_to_compile, model_compiled
+        except (RuntimeError, torch.jit.JITException) as e:
+            print(f"Could not compile model, skipping compiled benchmark. Error: {e}")
+    else:
+        raise ValueError(f"Unknown benchmark mode: {mode}")
 
-    print("\nCompiling model with torch.compile()...")
-    try:
-        model_compiled = torch.compile(model)
-        _benchmark_internal(model_compiled, "compiled_sdpa")
-    except (RuntimeError, torch.jit.JITException) as e:
-        print(f"Could not compile model, skipping compiled benchmark. Error: {e}")
-
-    del model
+    # Final cleanup
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -150,7 +158,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark a transformers version.")
     parser.add_argument("--version", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--mode", choices=["eager_sdpa", "compiled_sdpa"], required=True, help="The benchmark mode to run."
+    )
     args = parser.parse_args()
 
     disable_progress_bar()
-    perform_benchmark(args.version, args.output_dir)
+    perform_benchmark(args.version, args.output_dir, args.mode)
