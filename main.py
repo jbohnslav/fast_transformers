@@ -9,7 +9,6 @@
 import argparse
 import json
 import logging
-import os
 import shlex
 import shutil
 import subprocess
@@ -25,14 +24,14 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 CONFIG = {
     "versions": [
-        # {
-        #     "name": "4.53.3",
-        #     "source": "transformers==4.53.3",
-        # },
-        # {
-        #     "name": "4.54.0",
-        #     "source": "transformers==4.54.0",
-        # },
+        {
+            "name": "4.53.3",
+            "source": "transformers==4.53.3",
+        },
+        {
+            "name": "4.54.0",
+            "source": "transformers==4.54.0",
+        },
         {
             "name": "transformers-main",
             "source": "git+https://github.com/huggingface/transformers.git",
@@ -110,9 +109,9 @@ def run_experiment(run_dir: Path, log_file: Path):
     for cfg in CONFIG["versions"]:
         name = cfg["name"]
         logger.info("--- Processing version: %s ---", name)
-        if os.path.exists("~/.triton/cache"):
-            logger.info("Clearing Triton cache...")
-            shutil.rmtree("~/.triton/cache")
+        cache_dir = Path.home() / ".triton" / "cache"
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
         python_executable = CONFIG["venvs_dir"] / f"venv-{name}" / "bin" / "python"
         version_output_dir = run_dir / name
         version_output_dir.mkdir(exist_ok=True)
